@@ -152,6 +152,8 @@ static int (*true_renameat2)(int, const char *, int, const char *);
 static int (*true_symlinkat)(const char *, int, const char *);
 static int (*true_unlinkat)(int, const char *, int);
 
+static int (*true_statx)(int, const char *, int, unsigned int, struct statx *);
+
 #if defined __GNUC__ && __GNUC__>=2
 	#define inline inline
 #else
@@ -425,6 +427,7 @@ static void initialize(void) {
 	true_symlinkat     = dlsym(libc_handle, "symlinkat");
 	true_unlinkat      = dlsym(libc_handle, "unlinkat");
 
+	true_statx         = dlsym(libc_handle, "statx");
 
 	if(instw_init()) exit(-1);
 }
@@ -3121,6 +3124,91 @@ int scandir(	const char *dir,struct dirent ***namelist,
 
 	return result;
 }		
+
+int statx(int fd, const char *pathname, int flags,
+          unsigned int mask, struct statx *info) {
+	int result;
+	instw_t instw;
+	int status;
+
+	if (!libc_handle)
+		initialize();
+
+#if DEBUG
+	debug(2,"statx(%s,%p)\n",pathname,info);
+#endif
+
+	  /* We were asked to work in "real" mode */
+	if( !(__instw.gstatus & INSTW_INITIALIZED) ||
+	    !(__instw.gstatus & INSTW_OKWRAP) ) {
+		result=true_statx(fd,pathname,flags,mask,info);
+		return result;
+	}
+
+	instw_new(&instw);
+	instw_setpath(&instw,pathname);
+	instw_getstatus(&instw,&status);
+
+#if DEBUG
+	instw_print(&instw);
+#endif
+
+	if(status&INSTW_TRANSLATED) {
+		debug(4,"\teffective statx(%s,%p)\n",
+		      instw.translpath,info);
+		result=true_statx(fd,instw.translpath,flags,mask,info);
+	} else {
+		debug(4,"\teffective statx(%s,%p)\n",
+		      instw.path,info);
+		result=true_statx(fd,instw.path,flags,mask,info);
+	}
+
+	instw_delete(&instw);
+
+	return result;
+}
+
+int fstatat(int fd, const char *pathname, struct stat *info, int flags) {
+	int result;
+	instw_t instw;
+	int status;
+
+	if (!libc_handle)
+		initialize();
+
+#if DEBUG
+	debug(2,"fstatat(%s,%p)\n",pathname,info);
+#endif
+
+	  /* We were asked to work in "real" mode */
+	if( !(__instw.gstatus & INSTW_INITIALIZED) ||
+	    !(__instw.gstatus & INSTW_OKWRAP) ) {
+		result=true_fstatat(fd,pathname,info,flags);
+		return result;
+	}
+
+	instw_new(&instw);
+	instw_setpath(&instw,pathname);
+	instw_getstatus(&instw,&status);
+
+#if DEBUG
+	instw_print(&instw);
+#endif
+
+	if(status&INSTW_TRANSLATED) {
+		debug(4,"\teffective fstatat(%s,%p)\n",
+		      instw.translpath,info);
+		result=true_fstatat(fd,instw.translpath,info,flags);
+	} else {
+		debug(4,"\teffective fstatat(%s,%p)\n",
+		      instw.path,info);
+		result=true_fstatat(fd,instw.path,info,flags);
+	}
+
+	instw_delete(&instw);
+
+	return result;
+}
 
 int __xstat(int version,const char *pathname,struct stat *info) {
 	int result;
